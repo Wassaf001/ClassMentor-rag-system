@@ -16,7 +16,7 @@ load_dotenv()
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
 
 groq_api_key = os.getenv("groq_api_key")
-gemini_api_key = os.getenv("GEMINI_API_KEY")~
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 FAISS_INDEX_PATH = "../database/faiss/index.faiss"
 PROCESSED_FOLDER = "../database/processed"
@@ -33,7 +33,7 @@ def load_faiss_index():
             folder_path="../database/faiss",
             index_name="index",
             embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=gemini_api_key),
-            allow_dangerous_deserialization=True  
+            allow_dangerous_deserialization=True
         )
     else:
         print("⚠️ FAISS index not found! Building FAISS first...")
@@ -59,14 +59,15 @@ retriever = vector_store.as_retriever()
 
 async def process_query(user_query):
     """Process the user's query and return the response."""
+    print(f"Processing query: {user_query}")
     start_time = time.process_time()
     
-    relevant_docs = retriever.get_relevant_documents(user_query)
+    relevant_docs = retriever.invoke(user_query)
     response = document_chain.invoke({"context": relevant_docs, "input": user_query})
 
     elapsed_time = time.process_time() - start_time
     print("\n💡 **Response:**\n")
-    print(response["answer"])
+    print(response)
     print(f"\n⏳ Response time: {elapsed_time:.2f} seconds\n")
 
     print("\n📚 **Relevant Documents:**\n")
