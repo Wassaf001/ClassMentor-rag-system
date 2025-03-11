@@ -2,9 +2,7 @@ import os
 import asyncio
 import time
 import subprocess
-from dotenv import load_dotenv
 from datetime import datetime
-from typing import List
 from langchain_groq import ChatGroq
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,28 +16,54 @@ os.environ['USER_AGENT'] = 'ClassMentor/1.0'
 groq_api_key = os.getenv("groq_api_key")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-FAISS_INDEX_PATH = "../database/faiss/index.faiss"
+FAISS_FOLDER = "../database/faiss"
+FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
 PROCESSED_FOLDER = "../database/processed"
 
 vector_store = None
+MAX_RETRIES = 3
+retry_count = 0
 
 def load_faiss_index():
     """Loads the FAISS vector store if it exists, otherwise triggers FAISS building."""
-    global vector_store
+    global vector_store, retry_count
+
+    if retry_count >= MAX_RETRIES:
+        print("❌ Failed to load FAISS after multiple attempts. Exiting...")
+        exit(1)
 
     if os.path.exists(FAISS_INDEX_PATH):
         print("🔄 Loading FAISS index...")
         vector_store = FAISS.load_local(
-            folder_path="../database/faiss",
+            folder_path=FAISS_FOLDER,
             index_name="index",
-            embeddings=GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=gemini_api_key),
+            embeddings=GoogleGenerativeAIEmbeddings(
+                model="models/text-embedding-004",
+                google_api_key=gemini_api_key
+            ),
             allow_dangerous_deserialization=True
         )
     else:
         print("⚠️ FAISS index not found! Building FAISS first...")
-        subprocess.run(["python", "build_faiss.py"], check=True) 
-        print("🔄 Retrying FAISS loading...")
-        load_faiss_index() 
+        retry_count += 1
+
+        try:
+            result = subprocess.run(
+                ["python", "build_faiss.py"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            print("📜 FAISS Build Output:\n", result.stdout)
+            if result.stderr:
+                print("⚠️ FAISS Build Errors:\n", result.stderr)
+
+            print("🔄 Retrying FAISS loading...")
+            load_faiss_index()
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error running build_faiss.py: {e}")
+            exit(1)
 
 load_faiss_index()
 
@@ -75,5 +99,34 @@ async def process_query(user_query):
         print(f"🔹 Document #{i+1}\n{doc.page_content}\n{'-'*40}")
 
 if __name__ == "__main__":
-    user_query = input("📝 Enter your query: ")
-    asyncio.run(process_query(user_query))
+    print("\n🤖 Welcome to the RAG Query System!")
+    print("----------------------------------------")
+    
+    # Check environment variables
+    if not groq_api_key:
+        print("❌ Error: GROQ API key not found in .env file")
+        exit(1)
+    if not gemini_api_key:
+        print("❌ Error: Gemini API key not found in .env file")
+        exit(1)
+        
+    # Check FAISS index path
+    if not os.path.exists(FAISS_FOLDER):
+        print(f"❌ Error: FAISS directory not found at {FAISS_FOLDER}")
+        exit(1)
+        
+    try:
+        user_query = input("📝 Enter your query (or Ctrl+C to exit): ")
+        if user_query.strip():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(process_query(user_query))
+        else:
+            print("⚠️ Query cannot be empty!")
+    except KeyboardInterrupt:
+        print("\n\n👋 Goodbye!")
+    except Exception as e:
+        print(f"\n❌ An error occurred: {str(e)}")
+        import traceback
+        print("\nDetailed error:")
+        print(traceback.format_exc())
