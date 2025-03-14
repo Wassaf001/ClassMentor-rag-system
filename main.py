@@ -9,12 +9,22 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.schema import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from dotenv import load_dotenv
+import traceback
 
 load_dotenv()
+
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
 
 groq_api_key = os.getenv("groq_api_key")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
+
+if not groq_api_key:
+    print("❌ Error: GROQ API key not found in .env file")
+    exit(1)
+if not gemini_api_key:
+    print("❌ Error: Gemini API key not found in .env file")
+    exit(1)
 
 FAISS_FOLDER = "../database/faiss"
 FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
@@ -67,10 +77,12 @@ def load_faiss_index():
 
 load_faiss_index()
 
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="mixtral-8x7b-32768")
+# llm = ChatGroq(groq_api_key=groq_api_key, model_name="mixtral-8x7b-32768")
+
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 prompt_template = ChatPromptTemplate.from_template("""
-Answer the following question based only on the provided context.
+Answer the following question based only on the provided context and answer directly and do not say based on the provided context.
 Think step by step before providing a detailed answer.
 <context>
 {context}
@@ -102,31 +114,23 @@ if __name__ == "__main__":
     print("\n🤖 Welcome to the RAG Query System!")
     print("----------------------------------------")
     
-    # Check environment variables
-    if not groq_api_key:
-        print("❌ Error: GROQ API key not found in .env file")
-        exit(1)
-    if not gemini_api_key:
-        print("❌ Error: Gemini API key not found in .env file")
-        exit(1)
-        
-    # Check FAISS index path
     if not os.path.exists(FAISS_FOLDER):
         print(f"❌ Error: FAISS directory not found at {FAISS_FOLDER}")
         exit(1)
         
     try:
-        user_query = input("📝 Enter your query (or Ctrl+C to exit): ")
-        if user_query.strip():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(process_query(user_query))
-        else:
-            print("⚠️ Query cannot be empty!")
+        while True:
+            user_query = input("📝 Enter your query (or type 'exit' to stop): ")
+            if user_query.strip().lower() == 'exit':
+                print("\n👋 Goodbye!")
+                break
+            elif user_query.strip():
+                asyncio.run(process_query(user_query))
+            else:
+                print("⚠️ Query cannot be empty!")
     except KeyboardInterrupt:
         print("\n\n👋 Goodbye!")
     except Exception as e:
         print(f"\n❌ An error occurred: {str(e)}")
-        import traceback
         print("\nDetailed error:")
         print(traceback.format_exc())
