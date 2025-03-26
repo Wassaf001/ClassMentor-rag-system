@@ -1,4 +1,5 @@
 import os
+import subprocess
 from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -11,8 +12,56 @@ load_dotenv()
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-FAISS_FOLDER = "../database/faiss"
-PROCESSED_FOLDER = "../database/processed"
+FAISS_FOLDER = "../../database/faiss"
+FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
+PROCESSED_FOLDER = "../../database/processed"
+
+vector_store = None
+MAX_RETRIES = 3
+retry_count = 0
+
+def load_faiss_index():
+    """Loads the FAISS vector store if it exists, otherwise triggers FAISS building."""
+    global vector_store, retry_count
+
+    if retry_count >= MAX_RETRIES:
+        print("❌ Failed to load FAISS after multiple attempts. Exiting...")
+        exit(1)
+
+    if os.path.exists(FAISS_INDEX_PATH):
+        print("🔄 Loading FAISS index...")
+        vector_store = FAISS.load_local(
+            folder_path=FAISS_FOLDER,
+            index_name="index",
+            embeddings=GoogleGenerativeAIEmbeddings(
+                model="models/text-embedding-004",
+                google_api_key=gemini_api_key
+            ),
+            allow_dangerous_deserialization=True
+        )
+        print("vector store", vector_store)
+    else:
+        print("⚠️ FAISS index not found! Building FAISS first...")
+        retry_count += 1
+
+        try:
+            result = subprocess.run(
+                ["python", "build_faiss.py"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            print("📜 FAISS Build Output:\n", result.stdout)
+            if result.stderr:
+                print("⚠️ FAISS Build Errors:\n", result.stderr)
+
+            print("🔄 Retrying FAISS loading...")
+            load_faiss_index()
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error running build_faiss.py: {e}")
+            exit(1)
+    return vector_store
 
 def build_faiss():
     """Builds the FAISS index from processed documents."""
@@ -48,6 +97,3 @@ def build_faiss():
             print(f"❌ Error during FAISS creation: {e}")
             print(traceback.format_exc())
             exit(1)
-
-if __name__ == "__main__":
-    build_faiss()
