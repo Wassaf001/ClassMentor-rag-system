@@ -14,6 +14,11 @@ import traceback
 from utils import load_faiss_index
 import uvicorn
 
+# Usman Sir Suggestions:
+# Implementing RAG server using Simple RAG
+# Implementing RAG server using RAG Fusion
+# Implementing RAG server using TF-IDF
+
 load_dotenv()
 
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
@@ -80,4 +85,8 @@ async def process_query(request: QueryRequest):
     return {
         "response": response,
         "response_time": elapsed_time,
-        "relevant_documents": [doc.page_
+        "relevant_documents": [doc.page_content for doc in relevant_docs]
+    }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
