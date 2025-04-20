@@ -21,7 +21,7 @@ import uvicorn
 # Load environment variables
 load_dotenv()
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
-groq_api_key = os.getenv("groq_api_key")
+groq_api_key = os.getenv("groq_api_key1")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 if not groq_api_key:

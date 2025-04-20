@@ -95,7 +95,7 @@ def display_results(results):
     print("\nFull results saved to rag_comparison_results.json")
 
 def main():
-    query = input("Enter your query: ") or "Solve the operating assignment."
+    query = input("Enter your query: ")
     print(f"\nQuerying all RAG servers with: '{query}'")
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(query_all_servers(query))
