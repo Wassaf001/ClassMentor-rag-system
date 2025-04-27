@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.schema import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.retrievers import BM25Retriever
+from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
@@ -127,7 +127,7 @@ class RAGFusion:
             
             for q in all_queries:
                 dense_docs = await asyncio.to_thread(self.dense_retriever.invoke, q)
-                bm25_docs = await asyncio.to_thread(self.bm25_retriever.get_relevant_documents, q)
+                bm25_docs = await asyncio.to_thread(self.bm25_retriever.invoke, q)
                 
                 dense_results.append(dense_docs)
                 bm25_results.append(bm25_docs)

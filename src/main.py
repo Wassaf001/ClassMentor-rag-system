@@ -1,45 +1,34 @@
 import os
 import time
-import asyncio
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.schema import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
-import traceback
 from utils import load_faiss_index
 import uvicorn
-
-# Usman Sir Suggestions:
-# Implementing RAG server using Simple RAG
-# Implementing RAG server using RAG Fusion
-# Implementing RAG server using TF-IDF
+from typing import Optional
 
 load_dotenv()
 
 os.environ['USER_AGENT'] = 'ClassMentor/1.0'
 
 groq_api_key = os.getenv("groq_api_key1")
-gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 if not groq_api_key:
     print("❌ Error: GROQ API key not found in .env file")
     exit(1)
-if not gemini_api_key:
-    print("❌ Error: Gemini API key not found in .env file")
-    exit(1)
+
 
 FAISS_FOLDER = "../../database/faiss"
 FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
-PROCESSED_FOLDER = "../../database/processed"
+
 
 vector_store = None
-MAX_RETRIES = 3
-retry_count = 0
+
 
 vector_store = load_faiss_index()
 
@@ -51,13 +40,13 @@ Think step by step before providing a detailed answer and when the students trie
 <context>
 {context}
 </context>
-Question: {input}
+Question: {query}
 """)
 
 document_chain = create_stuff_documents_chain(llm, prompt_template)
 if vector_store is not None:
     retriever = vector_store.as_retriever()
-else: 
+else:
     print("Vector Store not found. Exiting...")
     exit(1)
 
@@ -65,21 +54,25 @@ app = FastAPI()
 
 class QueryRequest(BaseModel):
     query: str
+    context: Optional[str] = Field(default="") 
 
 @app.post("/query")
 async def process_query(request: QueryRequest):
     """Process the user's query and return the response."""
     user_query = request.query
-    print(f"Processing query: {user_query}")
+    user_context = request.context  
+    print(f"Processing query: {user_query} with context: {user_context}")
+
     start_time = time.process_time()
-    
+
     try:
-        relevant_docs = retriever.invoke(user_query)
-        response = document_chain.invoke({"context": relevant_docs, "input": user_query})
+        combined_input = f"{user_query} {user_context}" if user_context else user_query
+        relevant_docs = retriever.invoke(combined_input) 
+        response = document_chain.invoke({"context": relevant_docs, "query": user_query})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    elapsed_time = time.process_time() - start_time
+    elapsed_time = time.process_time()
     print(f"\n⏳ Response time: {elapsed_time:.2f} seconds\n")
 
     return {
