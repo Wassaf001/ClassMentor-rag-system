@@ -1,99 +1,97 @@
 import os
 import subprocess
 from langchain_community.vectorstores import FAISS
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
-import traceback
 
 load_dotenv()
 
-os.environ['USER_AGENT'] = 'ClassMentor/1.0'
+os.environ['USER_AGENT'] = 'ClassMentor/1.0' 
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-FAISS_FOLDER = "../../database/faiss"
+FAISS_FOLDER = "../../database/faiss" 
 FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
-PROCESSED_FOLDER = "../../database/processed"
+BUILD_SCRIPT_NAME = "build_faiss.py"
 
-vector_store = None
-MAX_RETRIES = 3
-retry_count = 0
+MAX_BUILD_ATTEMPTS = 3
+_vector_store_cache = None
 
-def load_faiss_index():
-    """Loads the FAISS vector store if it exists, otherwise triggers FAISS building."""
-    global vector_store, retry_count
+def load_faiss_index(attempt=1):
+    """
+    Loads the FAISS vector store. If it doesn't exist or is corrupted,
+    it triggers the build process and retries loading.
+    """
+    global _vector_store_cache
 
-    if retry_count >= MAX_RETRIES:
-        print("❌ Failed to load FAISS after multiple attempts. Exiting...")
-        exit(1)
+    if _vector_store_cache:
+        print("🔄 Returning cached FAISS index...")
+        return _vector_store_cache
 
     if os.path.exists(FAISS_INDEX_PATH):
-        print("🔄 Loading FAISS index...")
-        vector_store = FAISS.load_local(
-            folder_path=FAISS_FOLDER,
-            index_name="index",
-            embeddings=GoogleGenerativeAIEmbeddings(
+        print(f"🔄 Attempting to load FAISS index (Attempt {attempt})...")
+        try:
+            if not gemini_api_key:
+                print("❌ GEMINI_API_KEY not found. Cannot load FAISS with GoogleGenerativeAIEmbeddings.")
+                return None 
+
+            embeddings = GoogleGenerativeAIEmbeddings(
                 model="models/text-embedding-004",
                 google_api_key=gemini_api_key
-            ),
-            allow_dangerous_deserialization=True
-        )
-        print("vector store", vector_store)
-    else:
-        print("⚠️ FAISS index not found! Building FAISS first...")
-        retry_count += 1
-
+            )
+            vector_store = FAISS.load_local(
+                folder_path=FAISS_FOLDER,
+                index_name="index",
+                embeddings=embeddings,
+                allow_dangerous_deserialization=True
+            )
+            print("✅ FAISS index loaded successfully.")
+            _vector_store_cache = vector_store
+            return vector_store
+        except Exception as e:
+            print(f"❌ Error loading existing FAISS index: {e}")
+            if attempt < MAX_BUILD_ATTEMPTS:
+                print("Index might be corrupted. Attempting to rebuild...")
+            else:
+                print(f"❌ Failed to load FAISS index after {attempt} attempts and potential rebuilds. Exiting...")
+                exit(1) 
+    if attempt <= MAX_BUILD_ATTEMPTS:
+        print(f"⚠️ FAISS index not found or loading failed. Triggering build (Attempt {attempt}/{MAX_BUILD_ATTEMPTS})...")
         try:
             result = subprocess.run(
-                ["python", "build_faiss.py"],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                ["python", BUILD_SCRIPT_NAME],
+                check=True,       
+                capture_output=True, 
+                text=True        
             )
-            print("📜 FAISS Build Output:\n", result.stdout)
+            print("📜 FAISS Build Script Output:\n", result.stdout)
             if result.stderr:
-                print("⚠️ FAISS Build Errors:\n", result.stderr)
+                print("⚠️ FAISS Build Script Errors:\n", result.stderr)
+            
+            return load_faiss_index(attempt=attempt + 1)
 
-            print("🔄 Retrying FAISS loading...")
-            load_faiss_index()
         except subprocess.CalledProcessError as e:
-            print(f"❌ Error running build_faiss.py: {e}")
+            print(f"❌ Error running {BUILD_SCRIPT_NAME}: {e}")
+            print(f"📜 stdout from {BUILD_SCRIPT_NAME}:\n", e.stdout)
+            print(f"stderr from {BUILD_SCRIPT_NAME}:\n", e.stderr)
+            if attempt < MAX_BUILD_ATTEMPTS:
+                print(f"Retrying build and load ({attempt + 1}/{MAX_BUILD_ATTEMPTS})...")
+                return load_faiss_index(attempt=attempt + 1) 
+            else:
+                print(f"❌ Build process failed after {attempt} attempts. Exiting.")
+                exit(1)
+        except FileNotFoundError:
+            print(f"❌ Error: The build script '{BUILD_SCRIPT_NAME}' was not found.")
+            print("Ensure it's in the same directory as faiss_utils.py, or in your system's PATH,")
+            print("or update BUILD_SCRIPT_NAME with the correct path.")
             exit(1)
-    return vector_store
+    else:
+        print(f"❌ Failed to load or build FAISS index after {MAX_BUILD_ATTEMPTS} attempts. Giving up.")
+        return None
 
-def build_faiss():
-    """Builds the FAISS index from processed documents."""
-    all_files = [f for f in os.listdir(PROCESSED_FOLDER) if f.endswith(".txt")]
-    if not all_files:
-        print("⚠️ No processed documents found! Exiting FAISS build.")
-        exit(1)
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=500)
-    embeddings_model = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004", google_api_key=gemini_api_key
-    )
-
-    processed_docs = []
-    for filename in all_files:
-        file_path = os.path.join(PROCESSED_FOLDER, filename)
-        print(f"📖 Reading file: {file_path}")
-        with open(file_path, 'r', encoding='utf-8') as f:
-            processed_docs.append(Document(page_content=f.read()))
-
-    if processed_docs:
-        split_docs = text_splitter.split_documents(processed_docs)
-        print("🔨 Generating FAISS embeddings")
-        try:
-            vector_store = FAISS.from_texts(
-                texts=[doc.page_content for doc in split_docs],
-                embedding=embeddings_model,
-                metadatas=[doc.metadata for doc in split_docs]
-            )
-            vector_store.save_local(FAISS_FOLDER, index_name="index")
-            print("✅ FAISS index built successfully")
-        except Exception as e:
-            print(f"❌ Error during FAISS creation: {e}")
-            print(traceback.format_exc())
-            exit(1)
+if __name__ == "__main__":
+    print("--- Running faiss_utils.py directly ---")
+    vector_db = load_faiss_index()
+    if vector_db:
+        print("\n🎉 FAISS Vector Store is ready for use in faiss_utils.py.")
+    else:
+        print("\n😭 Could not initialize FAISS Vector Store.")

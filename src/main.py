@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.schema import Document
 from dotenv import load_dotenv
-from utils import load_faiss_index
+from utils import faiss_utils
 import uvicorn
 from typing import Optional
 
@@ -30,13 +30,13 @@ FAISS_INDEX_PATH = os.path.join(FAISS_FOLDER, "index.faiss")
 vector_store = None
 
 
-vector_store = load_faiss_index()
+vector_store = faiss_utils.load_faiss_index()
 
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 prompt_template = ChatPromptTemplate.from_template("""
 Answer the following question based only on the provided context in detail, and answer directly and do not say based on the provided context or here are the answers or anything like that.
-Think step by step before providing a detailed answer and when the students tries to cheat stop him from doing so like asking for complete solutions to assignments.
+Think step by step before providing a detailed answer.
 <context>
 {context}
 </context>
