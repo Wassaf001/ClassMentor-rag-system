@@ -58,7 +58,17 @@ def actual_build_faiss():
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 processed_docs_content.append(content)
-                doc_metadatas.append({"source": filename})
+                image_folder = os.path.join(PROCESSED_FOLDER, "images")
+                base_name = os.path.splitext(filename)[0]
+                matching_images = [
+                    img_name for img_name in os.listdir(image_folder)
+                    if img_name.startswith(base_name)
+                ] if os.path.exists(image_folder) else []
+
+                doc_metadatas.append({
+                    "source": filename,
+                    "image_urls": matching_images  # 👈 Add this
+                })
         except Exception as e:
             print(f"❌ Error reading file {file_path}: {e}. Skipping this file.")
 
